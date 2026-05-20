@@ -44,8 +44,9 @@ def test_simulated_ticker_emits_events(tmp_path):
     db.close()
 
 
-def test_create_app_demo_mode_seeds_and_runs():
-    app = create_app(demo_mode=True, enable_stream=False)
+def test_create_app_demo_mode_seeds_and_runs(tmp_path):
+    db = Database(tmp_path / "demo.sqlite")
+    app = create_app(db=db, demo_mode=True, enable_stream=False)
     with TestClient(app) as c:
         h = c.get("/healthz").json()
         assert h["demo_mode"] is True
@@ -60,6 +61,20 @@ def test_create_app_demo_mode_seeds_and_runs():
             ws_hello = ws.receive_json()
         assert ws_hello["type"] == "hello"
         assert ws_hello["demo_mode"] is True
+
+
+def test_demo_seed_is_idempotent_across_restart(tmp_path):
+    """uvicorn --reload re-runs the app factory; this guards against the
+    sample data being duplicated on every code-save during development."""
+    dbpath = tmp_path / "demo.sqlite"
+    app1 = create_app(db=Database(dbpath), demo_mode=True, enable_stream=False)
+    with TestClient(app1) as c:
+        first = len(c.get("/stocks/AAPL").json()["intraday"])
+    # Second factory call (simulating uvicorn reload) must NOT add more bars.
+    app2 = create_app(db=Database(dbpath), demo_mode=True, enable_stream=False)
+    with TestClient(app2) as c:
+        second = len(c.get("/stocks/AAPL").json()["intraday"])
+    assert second == first
 
 
 def test_demo_symbol_list_is_stable():

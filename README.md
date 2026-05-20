@@ -7,34 +7,68 @@
 
 ---
 
-## 🚀 Run it in 30 seconds (no API keys, no signup)
+## 🛠 Development (fast hot-reload) — start here
 
-Pick ONE of these. Both serve the dashboard at **<http://localhost:5173>**.
+This is what you want during day-to-day work. Backend auto-restarts on
+Python file saves; frontend reloads instantly on `.ts` / `.tsx` saves.
+No Docker rebuilds. No API keys. Defaults to demo mode with sample data.
 
-### Option A — Docker (easiest, one command)
+### Prerequisites
 
-You need Docker Desktop installed.
+- **Python 3.10+**
+- **Node.js 18+** (which gives you `npm`)
+
+#### Installing on Windows
+
+1. **Python 3.10+** — go to <https://www.python.org/downloads/windows/>,
+   download the latest 3.x installer, run it, and **tick "Add Python to
+   PATH"** on the first screen. Or install from the Microsoft Store
+   ("Python 3.12").
+2. **Node.js 18+ LTS** — go to <https://nodejs.org>, click the green
+   **LTS** button, run the installer with all defaults.
+3. (Recommended) **Git for Windows** — <https://gitforwindows.org>.
+4. Open **PowerShell** (Start menu → "PowerShell") and verify:
+   ```powershell
+   python --version    # 3.10 or higher
+   node --version      # v18 or higher
+   ```
+
+#### Installing on macOS
 
 ```bash
-docker compose up --build
+brew install python@3.12 node
 ```
 
-Wait ~60 seconds the first time (it builds the Python + Node images), then
-open **<http://localhost:5173>** in your browser. You'll see the
-dashboard with sample data and a simulated price ticker driving the
-"flash green / red" updates live. No keys required.
-
-To stop: press `Ctrl+C` in that terminal.
-
-### Option B — No Docker, native (Python 3.10+ and Node 18+ on your machine)
+#### Installing on Linux
 
 ```bash
-./run_demo.sh
+sudo apt install python3 python3-venv python3-pip nodejs npm        # Debian/Ubuntu
+# or
+sudo dnf install python3 python3-pip nodejs npm                      # Fedora/RHEL
 ```
 
-This script creates a Python venv, installs deps, installs frontend
-deps, and starts both servers. It prints `http://localhost:5173` when
-ready — open that in your browser. `Ctrl+C` to stop everything.
+### One command to launch dev mode
+
+Pick the one for your OS — they all do the same thing and open at
+**<http://localhost:5173>**:
+
+| Your OS | Command |
+|---|---|
+| **Windows (PowerShell)** | `.\dev.ps1` |
+| **macOS / Linux**        | `./dev.sh` |
+| **anywhere (npm)**       | `npm install && npm run dev:all` |
+| **anywhere (make)**      | `make dev` |
+
+The first run installs the Python venv + npm packages (~1 minute). After
+that it boots in ~3 seconds. Press **Ctrl+C** to stop both servers.
+
+Edit any `*.py` file under `api/`, `data/`, `signals/`, etc → backend
+restarts in ~1s. Edit any `*.tsx` / `*.ts` file under `frontend/src/` →
+the browser updates instantly (Vite HMR).
+
+> Windows note: if PowerShell refuses to run `.\dev.ps1` with an
+> "execution policy" error, run this once in the same window first:
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
 
 ### What you'll see
 
@@ -46,6 +80,24 @@ A dark dashboard with:
 - **Live News Feed**.
 - A **Paper Portfolio** page (top nav) with positions, stops, P&L.
 - Header pills: `LIVE`, `PAPER MODE`, `DEMO DATA`.
+
+---
+
+## 📦 Production-ish run via Docker (no host installs needed)
+
+Use this when you don't want to install Python and Node on the host, or
+to demo on a friend's machine. Builds two images and starts them with one
+command:
+
+```bash
+docker compose up --build
+```
+
+Wait ~60 seconds for the first build, then open
+**<http://localhost:5173>**. `Ctrl+C` to stop.
+
+This path does **not** hot-reload (each code change needs `docker compose
+up --build` again). Use the dev mode above for editing.
 
 ---
 

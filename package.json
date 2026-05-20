@@ -1,0 +1,14 @@
+{
+  "name": "c5-ai-trading-dev",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Development orchestration only -- runs backend (uvicorn --reload) and frontend (vite) together.",
+  "scripts": {
+    "dev:backend": "python -m uvicorn api.app:create_app --factory --reload --reload-exclude .venv --reload-exclude node_modules --reload-exclude frontend --host 0.0.0.0 --port 8000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:all": "concurrently -k -n backend,frontend -c green,cyan \"npm:dev:backend\" \"npm:dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

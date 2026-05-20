@@ -53,8 +53,17 @@ def create_app(*, db: Database | None = None,
         symbols = DEMO_SYMBOLS if is_demo else cfg.symbol_list()
 
     if is_demo:
-        log.info("Demo mode: seeding sample data (no API keys needed)")
-        seed_database(db, symbols)
+        # Skip re-seeding on uvicorn --reload restarts: if the watch-list
+        # symbol already has bars, the simulated ticker will keep extending
+        # them. This keeps dev-mode startups instant and avoids DB bloat.
+        already_seeded = bool(symbols) and bool(
+            db.fetch_prices(symbols[0], limit=1)
+        )
+        if already_seeded:
+            log.info("Demo mode: existing sample data found, skipping seed")
+        else:
+            log.info("Demo mode: seeding sample data (no API keys needed)")
+            seed_database(db, symbols)
         stream = SimulatedTicker(symbols, db=db)
     elif (stream is None and enable_stream and cfg.alpaca_api_key
           and cfg.alpaca_api_secret):

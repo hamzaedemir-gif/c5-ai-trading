@@ -219,3 +219,4 @@ __marimo__/
 c5_*.sqlite
 backend.log
 frontend.log
+node_modules/
