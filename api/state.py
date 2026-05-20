@@ -19,6 +19,8 @@ class AppState:
     symbols: List[str]
     stream: AlpacaStream | None = None
     paper_mode: bool = True
+    demo_mode: bool = False
+    paper: "object | None" = None    # PaperPortfolioService; forward ref
     disclaimer: str = (
         "Analytics & education only. This dashboard displays market data and "
         "ranks candidates. It places NO trades and is NOT financial advice."
@@ -29,3 +31,19 @@ class AppState:
         self.recent_events.append(event)
         if len(self.recent_events) > cap:
             del self.recent_events[: len(self.recent_events) - cap]
+
+    def marks(self) -> dict:
+        """Latest price per symbol, from the live stream if available."""
+        out: dict = {}
+        if self.stream is not None:
+            for sym, snap in self.stream.snapshot().items():
+                if snap.get("price"):
+                    out[sym] = snap["price"]
+        # fall back to DB latest for symbols without live data
+        from data import latest_quote
+        for sym in self.symbols:
+            if sym not in out:
+                q = latest_quote(self.db, sym)
+                if q and q.get("price"):
+                    out[sym] = q["price"]
+        return out

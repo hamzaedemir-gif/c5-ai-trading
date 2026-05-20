@@ -16,6 +16,7 @@ from config import load_config
 from data.alpaca_stream import AlpacaStream
 from data.db import Database
 
+from .paper_portfolio import PaperPortfolioService
 from .routes import router
 from .state import AppState
 from .ws_manager import WebSocketManager
@@ -53,7 +54,15 @@ def create_app(*, db: Database | None = None,
             db=db,
         )
 
-    state = AppState(db=db, symbols=symbols, stream=stream, paper_mode=True)
+    paper = PaperPortfolioService(
+        db,
+        starting_capital=cfg.starting_capital,
+        position_pct=cfg.position_pct,
+        stop_loss_pct=cfg.stop_loss_pct,
+        daily_max_loss_pct=cfg.daily_max_loss_pct,
+    )
+    state = AppState(db=db, symbols=symbols, stream=stream, paper_mode=True,
+                     paper=paper)
     ws_manager = WebSocketManager()
 
     @asynccontextmanager

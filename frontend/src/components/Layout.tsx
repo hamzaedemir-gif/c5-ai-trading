@@ -26,6 +26,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <div className="text-mute text-xs">Live Signal Dashboard</div>
             </div>
           </Link>
+          <nav className="flex items-center gap-3 text-xs">
+            <NavLink to="/">Opportunities</NavLink>
+            <NavLink to="/portfolio">Paper Portfolio</NavLink>
+          </nav>
           <div className="flex-1 max-w-md">
             <SearchBar onPick={(sym) => navigate(`/stocks/${sym}`)} />
           </div>
@@ -57,6 +61,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
         Analytics & education only · No orders are ever routed by this app · Not financial advice
       </footer>
     </div>
+  );
+}
+
+function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="text-mute hover:text-accent border border-transparent
+        hover:border-accent/40 px-2 py-1 rounded"
+    >
+      {children}
+    </Link>
   );
 }
 

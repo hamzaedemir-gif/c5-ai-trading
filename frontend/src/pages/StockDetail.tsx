@@ -8,6 +8,39 @@ import { PriceCell } from "../components/PriceCell";
 import { StockChart } from "../components/StockChart";
 import { useLiveData } from "../live/LiveDataProvider";
 
+function PaperBuy({ symbol, price }: { symbol: string; price: number | null }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await api.paperBuy(symbol, price ?? undefined);
+      setMsg(r.approved
+        ? `Paper bought ${r.qty} @ $${r.price.toFixed(2)} (stop $${r.stop_price?.toFixed(2)})`
+        : `Rejected: ${r.reason}`);
+    } catch (e) {
+      setMsg(`Error: ${e}`);
+    } finally {
+      setBusy(false);
+      setTimeout(() => setMsg(null), 5000);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={run}
+        disabled={busy}
+        className="text-xs uppercase tracking-widest font-bold
+          border border-accent/60 text-accent bg-accent/10 rounded
+          px-4 py-2 hover:bg-accent/20 disabled:opacity-40"
+      >
+        {busy ? "…" : "Paper Buy"}
+      </button>
+      {msg && <span className="text-xs text-mute">{msg}</span>}
+    </div>
+  );
+}
+
 export function StockDetail() {
   const { symbol = "" } = useParams();
   const sym = symbol.toUpperCase();
@@ -60,11 +93,14 @@ export function StockDetail() {
           <PriceCell value={livePrice ?? undefined} fmt={(v) => `$${v.toFixed(2)}`} />
         </div>
         <ChangePct value={liveChange} />
-        {data.quote && (
-          <span className="text-mute text-xs ml-auto">
-            last: {new Date(data.quote.ts).toLocaleString()} ({data.quote.source})
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {data.quote && (
+            <span className="text-mute text-xs">
+              last: {new Date(data.quote.ts).toLocaleString()} ({data.quote.source})
+            </span>
+          )}
+          <PaperBuy symbol={sym} price={livePrice} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from data import compute_movers, latest_quote, list_recent_news, search_symbols
 
 from .candidates import list_audit_log, rank_candidates
+from .opportunities import compute_hit_rate, list_opportunities
 
 router = APIRouter()
 
@@ -23,10 +24,98 @@ def healthz(request: Request) -> dict:
     return {
         "ok": True,
         "paper_mode": s.paper_mode,
+        "demo_mode": s.demo_mode,
         "symbols": s.symbols,
         "live_symbols": len(snapshot),
         "stream_connected": bool(s.stream and s.stream.latest),
     }
+
+
+@router.get("/opportunities")
+def opportunities(request: Request,
+                  top_n: int = Query(20, ge=1, le=100),
+                  min_confidence: float = Query(0.0, ge=0.0, le=1.0),
+                  horizon_days: int = Query(5, ge=1, le=30)) -> dict:
+    s = _state(request)
+    items = list_opportunities(s.db, s.symbols,
+                               top_n=top_n,
+                               min_confidence=min_confidence,
+                               horizon_days=horizon_days)
+    return {
+        "items": items,
+        "label_explainer": (
+            "Probability is the model's estimated confidence (0..1). "
+            "Outcome range shows a 1-sigma move in BOTH directions over the "
+            "horizon, derived from trailing realised volatility."
+        ),
+        "disclaimer": s.disclaimer,
+    }
+
+
+@router.get("/performance/hit-rate")
+def performance_hit_rate(request: Request) -> dict:
+    s = _state(request)
+    return compute_hit_rate(s.db, s.symbols)
+
+
+@router.get("/paper/portfolio")
+def paper_portfolio(request: Request) -> dict:
+    s = _state(request)
+    if s.paper is None:
+        raise HTTPException(503, "paper portfolio not initialised")
+    s.paper.apply_stops(s.marks())
+    return s.paper.status(s.marks())
+
+
+@router.post("/paper/buy")
+def paper_buy(request: Request, body: dict = Body(...)) -> dict:
+    s = _state(request)
+    if s.paper is None:
+        raise HTTPException(503, "paper portfolio not initialised")
+    sym = str(body.get("symbol", "")).upper()
+    if not sym:
+        raise HTTPException(422, "symbol required")
+    price = body.get("price")
+    price = float(price) if price is not None else None
+    result = s.paper.paper_buy(sym, current_price=price)
+    return {
+        "approved": result.approved,
+        "reason": result.reason,
+        "symbol": result.symbol,
+        "qty": result.qty,
+        "price": result.price,
+        "stop_price": result.stop_price,
+        "notional": result.notional,
+        "trade_id": result.trade_id,
+        "mode": "paper",
+        "disclaimer": "Simulated. No real order was placed.",
+    }
+
+
+@router.post("/paper/sell")
+def paper_sell(request: Request, body: dict = Body(...)) -> dict:
+    s = _state(request)
+    if s.paper is None:
+        raise HTTPException(503, "paper portfolio not initialised")
+    sym = str(body.get("symbol", "")).upper()
+    if not sym:
+        raise HTTPException(422, "symbol required")
+    price = body.get("price")
+    price = float(price) if price is not None else None
+    return s.paper.paper_sell(sym, current_price=price)
+
+
+@router.post("/paper/kill-switch")
+def paper_kill_switch(request: Request, body: dict = Body(default={})) -> dict:
+    s = _state(request)
+    if s.paper is None:
+        raise HTTPException(503, "paper portfolio not initialised")
+    action = str(body.get("action", "trip")).lower()
+    if action == "reset":
+        s.paper.reset_kill_switch()
+    else:
+        s.paper.trip_kill_switch(reason=str(body.get("reason", "manual")))
+    return {"kill_switch": s.paper.risk.kill_switch}
 
 
 @router.get("/disclaimer")
