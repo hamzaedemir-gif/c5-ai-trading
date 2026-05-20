@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,19 +109,40 @@ class Database:
 
     def __init__(self, path: str | Path):
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
+        # check_same_thread=False so the same connection can be reused across
+        # the FastAPI threadpool. A lock serialises mutations.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        self._lock = threading.Lock()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def __enter__(self) -> "Database":
         return self
 
     def __exit__(self, *_exc) -> None:
-        self._conn.commit()
+        with self._lock:
+            self._conn.commit()
         self.close()
+
+    def _executemany_commit(self, sql: str, payload) -> int:
+        with self._lock:
+            cur = self._conn.executemany(sql, payload)
+            self._conn.commit()
+            return cur.rowcount
+
+    def _execute_commit_lastrow(self, sql: str, params) -> int:
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def _execute_fetchall(self, sql: str, params=()) -> Sequence[sqlite3.Row]:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
 
     # ---- writers ----------------------------------------------------------
     def insert_prices(self, rows: Iterable[Mapping]) -> int:
@@ -137,9 +159,7 @@ class Database:
             )
             for r in rows
         ]
-        cur = self._conn.executemany(sql, payload)
-        self._conn.commit()
-        return cur.rowcount
+        return self._executemany_commit(sql, payload)
 
     def insert_earnings(self, rows: Iterable[Mapping]) -> int:
         sql = (
@@ -158,9 +178,7 @@ class Database:
             )
             for r in rows
         ]
-        cur = self._conn.executemany(sql, payload)
-        self._conn.commit()
-        return cur.rowcount
+        return self._executemany_commit(sql, payload)
 
     def insert_news(self, rows: Iterable[Mapping]) -> int:
         sql = (
@@ -176,9 +194,7 @@ class Database:
             )
             for r in rows
         ]
-        cur = self._conn.executemany(sql, payload)
-        self._conn.commit()
-        return cur.rowcount
+        return self._executemany_commit(sql, payload)
 
     def insert_sentiment(self, rows: Iterable[Mapping]) -> int:
         sql = (
@@ -194,65 +210,73 @@ class Database:
             )
             for r in rows
         ]
-        cur = self._conn.executemany(sql, payload)
-        self._conn.commit()
-        return cur.rowcount
+        return self._executemany_commit(sql, payload)
 
     def log_signal(self, *, symbol: str, signal_type: str, confidence: float,
                    direction: str, inputs_json: str, ts: str | None = None,
                    notes: str | None = None) -> int:
-        sql = (
+        return self._execute_commit_lastrow(
             "INSERT INTO signal_log "
             "(ts, symbol, signal_type, confidence, direction, inputs_json, notes) "
-            "VALUES (?,?,?,?,?,?,?)"
+            "VALUES (?,?,?,?,?,?,?)",
+            (ts or _utcnow(), symbol, signal_type,
+             float(confidence), direction, inputs_json, notes),
         )
-        cur = self._conn.execute(
-            sql, (ts or _utcnow(), symbol, signal_type,
-                  float(confidence), direction, inputs_json, notes),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
 
     def log_trade(self, *, symbol: str, side: str, qty: float, price: float,
                   mode: str, signal_id: int | None = None,
                   reason: str | None = None, ts: str | None = None) -> int:
-        sql = (
+        return self._execute_commit_lastrow(
             "INSERT INTO trades "
             "(ts, symbol, side, qty, price, mode, signal_id, reason) "
-            "VALUES (?,?,?,?,?,?,?,?)"
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (ts or _utcnow(), symbol, side, float(qty),
+             float(price), mode, signal_id, reason),
         )
-        cur = self._conn.execute(
-            sql, (ts or _utcnow(), symbol, side, float(qty),
-                  float(price), mode, signal_id, reason),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
 
     # ---- readers ----------------------------------------------------------
     def fetch_prices(self, symbol: str, limit: int = 500) -> Sequence[sqlite3.Row]:
-        return self._conn.execute(
+        return self._execute_fetchall(
             "SELECT * FROM prices WHERE symbol = ? ORDER BY ts DESC LIMIT ?",
             (symbol, limit),
-        ).fetchall()
+        )
 
     def fetch_sentiment(self, symbol: str, limit: int = 100) -> Sequence[sqlite3.Row]:
-        return self._conn.execute(
+        return self._execute_fetchall(
             "SELECT * FROM sentiment WHERE symbol = ? ORDER BY ts DESC LIMIT ?",
             (symbol, limit),
-        ).fetchall()
+        )
 
     def fetch_earnings(self, symbol: str) -> Sequence[sqlite3.Row]:
-        return self._conn.execute(
+        return self._execute_fetchall(
             "SELECT * FROM earnings WHERE symbol = ? ORDER BY event_date DESC",
             (symbol,),
-        ).fetchall()
+        )
 
     def fetch_signals(self, symbol: str | None = None, limit: int = 100) -> Sequence[sqlite3.Row]:
         if symbol:
-            return self._conn.execute(
+            return self._execute_fetchall(
                 "SELECT * FROM signal_log WHERE symbol = ? ORDER BY ts DESC LIMIT ?",
                 (symbol, limit),
-            ).fetchall()
-        return self._conn.execute(
+            )
+        return self._execute_fetchall(
             "SELECT * FROM signal_log ORDER BY ts DESC LIMIT ?", (limit,),
-        ).fetchall()
+        )
+
+    def fetch_news(self, symbol: str | None = None,
+                   limit: int = 50) -> Sequence[sqlite3.Row]:
+        if symbol:
+            return self._execute_fetchall(
+                "SELECT * FROM news WHERE symbol = ? ORDER BY published_at DESC LIMIT ?",
+                (symbol, limit),
+            )
+        return self._execute_fetchall(
+            "SELECT * FROM news ORDER BY published_at DESC LIMIT ?", (limit,),
+        )
+
+    def distinct_symbols_like(self, pattern: str, limit: int) -> Sequence[sqlite3.Row]:
+        return self._execute_fetchall(
+            "SELECT DISTINCT symbol FROM prices "
+            "WHERE symbol LIKE ? ORDER BY symbol LIMIT ?",
+            (pattern, limit),
+        )

@@ -32,6 +32,9 @@ class Config:
     alpaca_api_key: str = _env("ALPACA_API_KEY")
     alpaca_api_secret: str = _env("ALPACA_API_SECRET")
     alpaca_base_url: str = _env("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    alpaca_data_feed: str = _env("ALPACA_DATA_FEED", "iex")
+    alpaca_stream_url: str = _env("ALPACA_STREAM_URL", "wss://stream.data.alpaca.markets/v2/iex")
+    alpaca_symbols: str = _env("ALPACA_SYMBOLS", "AAPL,MSFT,TSLA,NVDA,AMD,SPY,QQQ")
 
     finnhub_api_key: str = _env("FINNHUB_API_KEY")
     alpha_vantage_api_key: str = _env("ALPHA_VANTAGE_API_KEY")
@@ -41,6 +44,17 @@ class Config:
     position_pct: float = _env_float("C5_POSITION_PCT", 0.02)
     stop_loss_pct: float = _env_float("C5_STOP_LOSS_PCT", 0.03)
     daily_max_loss_pct: float = _env_float("C5_DAILY_MAX_LOSS_PCT", 0.05)
+
+    api_host: str = _env("C5_API_HOST", "0.0.0.0")
+    api_port: int = int(_env("C5_API_PORT", "8000"))
+    api_cors_origins: str = _env("C5_API_CORS_ORIGINS",
+                                 "http://localhost:5173,http://127.0.0.1:5173")
+
+    def symbol_list(self) -> list[str]:
+        return [s.strip().upper() for s in self.alpaca_symbols.split(",") if s.strip()]
+
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.api_cors_origins.split(",") if o.strip()]
 
     def is_paper(self) -> bool:
         return self.trading_mode.lower() != "live"
