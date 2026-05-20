@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Iterable
 
+from core.retry import retry_with_backoff
+
 from . import earnings as earnings_mod
 from . import news as news_mod
 from . import prices as prices_mod
@@ -36,6 +38,9 @@ class Ingestor:
         self.finnhub_key = finnhub_key
         self.stocktwits_url = stocktwits_url
 
+    @retry_with_backoff(attempts=3, base_delay=1.0,
+                        fallback=lambda self, symbol, **kw: 0,
+                        name="ingest_prices")
     def ingest_prices(self, symbol: str, period: str = "5d",
                       interval: str = "1m") -> int:
         rows = prices_mod.fetch_yfinance_history(symbol, period=period, interval=interval)
@@ -43,6 +48,9 @@ class Ingestor:
         log.info("prices: %s rows=%d (new=%d)", symbol, len(rows), n)
         return n
 
+    @retry_with_backoff(attempts=3, base_delay=1.0,
+                        fallback=lambda self, symbol: 0,
+                        name="ingest_earnings")
     def ingest_earnings(self, symbol: str) -> int:
         if not self.finnhub_key:
             log.warning("Skipping earnings for %s: no Finnhub key", symbol)
@@ -52,6 +60,9 @@ class Ingestor:
         log.info("earnings: %s rows=%d (new=%d)", symbol, len(rows), n)
         return n
 
+    @retry_with_backoff(attempts=3, base_delay=1.0,
+                        fallback=lambda self, symbol, lookback_days=3: 0,
+                        name="ingest_news")
     def ingest_news(self, symbol: str, lookback_days: int = 3) -> int:
         if not self.finnhub_key:
             log.warning("Skipping news for %s: no Finnhub key", symbol)
@@ -65,6 +76,9 @@ class Ingestor:
         log.info("news: %s rows=%d (new=%d)", symbol, len(rows), n)
         return n
 
+    @retry_with_backoff(attempts=3, base_delay=1.0,
+                        fallback=lambda self, symbol: 0,
+                        name="ingest_sentiment")
     def ingest_sentiment(self, symbol: str) -> int:
         rows = sentiment_mod.fetch_stocktwits(symbol, base_url=self.stocktwits_url)
         n = self.db.insert_sentiment(rows)

@@ -13,6 +13,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import load_config
+from core import BackgroundScheduler
+from data import Ingestor
 from data.alpaca_stream import AlpacaStream
 from data.db import Database
 
@@ -65,12 +67,19 @@ def create_app(*, db: Database | None = None,
                      paper=paper)
     ws_manager = WebSocketManager()
 
+    scheduler = BackgroundScheduler()
+    ingestor = Ingestor(db, finnhub_key=cfg.finnhub_api_key,
+                        stocktwits_url=cfg.stocktwits_base_url)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         stream_task: asyncio.Task | None = None
         if state.stream is not None:
             async def _broadcaster(event: dict) -> None:
                 state.add_event(event)
+                # Live tick invalidates short-TTL caches so the next request
+                # sees fresh data instead of an 8s-stale snapshot.
+                state.cache.invalidate()
                 await ws_manager.broadcast(event)
 
             state.stream.add_listener(_broadcaster)
@@ -82,9 +91,43 @@ def create_app(*, db: Database | None = None,
                 "No Alpaca stream attached -- set ALPACA_API_KEY/SECRET for "
                 "real-time data. REST endpoints still work against SQLite history."
             )
+
+        # Periodic refresh jobs. We run them off the request path so the UI
+        # never waits on a slow data provider.
+        def _async_blocking(fn, *fargs, **fkwargs):
+            async def runner():
+                await asyncio.to_thread(fn, *fargs, **fkwargs)
+            return runner
+
+        async def refresh_news_and_earnings():
+            for sym in state.symbols:
+                await asyncio.to_thread(ingestor.ingest_news, sym)
+                await asyncio.to_thread(ingestor.ingest_earnings, sym)
+                await asyncio.to_thread(ingestor.ingest_sentiment, sym)
+            state.cache.invalidate()
+
+        async def refresh_price_backfill():
+            # yfinance backfill catches anything Alpaca missed.
+            for sym in state.symbols:
+                await asyncio.to_thread(ingestor.ingest_prices, sym, "1d", "1m")
+            state.cache.invalidate()
+
+        async def refresh_stops():
+            if state.paper is not None:
+                await asyncio.to_thread(state.paper.apply_stops, state.marks())
+
+        scheduler.add("news_earnings_sentiment", refresh_news_and_earnings,
+                      interval_s=300)
+        scheduler.add("price_backfill", refresh_price_backfill,
+                      interval_s=120, enabled=not state.demo_mode)
+        scheduler.add("stop_check", refresh_stops, interval_s=10)
+        scheduler.start()
+        log.info("Background scheduler started: %d jobs", len(scheduler._jobs))
+
         try:
             yield
         finally:
+            await scheduler.stop()
             if state.stream is not None:
                 state.stream.stop()
             if stream_task is not None:

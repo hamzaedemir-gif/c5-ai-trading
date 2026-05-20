@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
+from core import TTLCache
 from data.alpaca_stream import AlpacaStream
 from data.db import Database
 
@@ -21,6 +22,7 @@ class AppState:
     paper_mode: bool = True
     demo_mode: bool = False
     paper: "object | None" = None    # PaperPortfolioService; forward ref
+    cache: TTLCache = field(default_factory=lambda: TTLCache(default_ttl=8.0))
     disclaimer: str = (
         "Analytics & education only. This dashboard displays market data and "
         "ranks candidates. It places NO trades and is NOT financial advice."

@@ -31,16 +31,26 @@ def healthz(request: Request) -> dict:
     }
 
 
+def _cache_get_or(state, key: tuple, ttl: float, fn):
+    hit, value = state.cache.get(key)
+    if hit:
+        return value
+    value = fn()
+    state.cache.set(key, value, ttl=ttl)
+    return value
+
+
 @router.get("/opportunities")
 def opportunities(request: Request,
                   top_n: int = Query(20, ge=1, le=100),
                   min_confidence: float = Query(0.0, ge=0.0, le=1.0),
                   horizon_days: int = Query(5, ge=1, le=30)) -> dict:
     s = _state(request)
-    items = list_opportunities(s.db, s.symbols,
-                               top_n=top_n,
-                               min_confidence=min_confidence,
-                               horizon_days=horizon_days)
+    key = ("opportunities", top_n, min_confidence, horizon_days)
+    items = _cache_get_or(s, key, 8.0, lambda: list_opportunities(
+        s.db, s.symbols, top_n=top_n,
+        min_confidence=min_confidence, horizon_days=horizon_days,
+    ))
     return {
         "items": items,
         "label_explainer": (
@@ -55,7 +65,8 @@ def opportunities(request: Request,
 @router.get("/performance/hit-rate")
 def performance_hit_rate(request: Request) -> dict:
     s = _state(request)
-    return compute_hit_rate(s.db, s.symbols)
+    return _cache_get_or(s, ("hit_rate",), 60.0,
+                         lambda: compute_hit_rate(s.db, s.symbols))
 
 
 @router.get("/paper/portfolio")
@@ -128,22 +139,30 @@ def candidates(request: Request,
                top_n: int = Query(20, ge=1, le=100),
                min_confidence: float = Query(0.0, ge=0.0, le=1.0)) -> dict:
     s = _state(request)
-    rows = rank_candidates(s.db, s.symbols,
-                           top_n=top_n, min_confidence=min_confidence)
+    key = ("candidates", top_n, min_confidence)
+    rows = _cache_get_or(s, key, 8.0, lambda: rank_candidates(
+        s.db, s.symbols, top_n=top_n, min_confidence=min_confidence,
+    ))
     return {"items": rows}
 
 
 @router.get("/movers")
 def movers(request: Request, lookback: int = Query(60, ge=2, le=500)) -> dict:
     s = _state(request)
-    return compute_movers(s.db, s.symbols, lookback_bars=lookback)
+    key = ("movers", lookback)
+    return _cache_get_or(s, key, 6.0, lambda: compute_movers(
+        s.db, s.symbols, lookback_bars=lookback,
+    ))
 
 
 @router.get("/news")
 def news(request: Request, symbol: str | None = None,
          limit: int = Query(50, ge=1, le=200)) -> dict:
     s = _state(request)
-    return {"items": list_recent_news(s.db, limit=limit, symbol=symbol)}
+    key = ("news", symbol or "", limit)
+    return _cache_get_or(s, key, 15.0, lambda: {
+        "items": list_recent_news(s.db, limit=limit, symbol=symbol),
+    })
 
 
 @router.get("/search")
