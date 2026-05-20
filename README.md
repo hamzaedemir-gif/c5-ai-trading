@@ -1,66 +1,118 @@
 # c5-ai-trading
 
-C5 AI Trading — automated trading bot driven by earnings, volume, and
-social-sentiment signals. Defaults to **paper mode**; live trading is
-intentionally not wired up until backtests look reasonable.
+> ⚠ **Analytics & education only.** This dashboard displays market data and
+> ranks candidates. It places **no trades** and is **not financial advice**.
+> Trading mode is hard-coded to paper; there is no live order-routing code.
+
+Real-time market data + signal dashboard, driven by earnings, volume, and
+social-sentiment signals.
 
 ## Architecture
 
 ```
-data/      ingests prices, earnings, news, social sentiment -> SQLite
-signals/   converts raw rows into scored Signals (confidence in [0, 1])
-risk/      gates each signal: position sizing, stop-loss, daily cap, kill switch
-backtest/  replays history through signals + risk and reports metrics
+data/           ingest prices / earnings / news / sentiment -> SQLite
+  alpaca_stream.py     real-time websocket feed (Alpaca, free IEX tier)
+  prices.py            historical backfill via yfinance
+  earnings.py / news.py Finnhub (free tier)
+  sentiment.py         StockTwits public stream
+signals/        Signal dataclass + volume/earnings/sentiment scorers
+risk/           paper portfolio + risk manager (sizing, stops, kill switch)
+backtest/       historical replay through signals + risk -> metrics
+api/            FastAPI backend exposing the dashboard + /ws live updates
+frontend/       React + TypeScript + Tailwind + Lightweight Charts UI
 ```
 
-Every signal is persisted in `signal_log` with its full inputs so any
-decision is auditable. Every paper trade is persisted in `trades`.
+Every signal is persisted in `signal_log` with full inputs so any decision
+is auditable. Every paper trade is persisted in `trades`. Defaults to
+**paper mode**; the backend refuses to start when `C5_TRADING_MODE=live`.
 
 ## Setup
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env       # then fill in keys
+cp .env.example .env       # fill in keys (see below)
 ```
 
-### Required `.env` variables
+Frontend:
+
+```bash
+cd frontend
+npm install
+```
+
+### Getting free API keys
+
+- **Alpaca** (real-time prices, free IEX feed): sign up at
+  <https://alpaca.markets> → Paper Trading → Generate API Keys → copy
+  `ALPACA_API_KEY` + `ALPACA_API_SECRET` into `.env`.
+- **Finnhub** (earnings + news, free tier): sign up at
+  <https://finnhub.io> → dashboard shows your `FINNHUB_API_KEY`.
+- **StockTwits**: public endpoint, no key required.
+- **yfinance**: no key required; used only for historical backfill.
+
+### `.env` variables
 
 | Variable | Purpose |
 |---|---|
-| `FINNHUB_API_KEY` | Earnings calendar + company news (free tier) |
-| `ALPHA_VANTAGE_API_KEY` | Optional: alternate earnings/news provider |
-| `ALPACA_API_KEY` / `ALPACA_API_SECRET` | Optional: paper-broker price feed |
-| `ALPACA_BASE_URL` | Defaults to Alpaca paper endpoint |
+| `ALPACA_API_KEY` / `ALPACA_API_SECRET` | **Required for real-time prices.** |
+| `ALPACA_STREAM_URL` | Defaults to `wss://stream.data.alpaca.markets/v2/iex` (free) |
+| `ALPACA_SYMBOLS` | Comma-separated tickers to subscribe to (e.g. `AAPL,MSFT,TSLA`) |
+| `FINNHUB_API_KEY` | Earnings + company news |
 | `STOCKTWITS_BASE_URL` | Defaults to public StockTwits API |
 | `C5_DB_PATH` | SQLite path (default `c5_data.sqlite`) |
-| `C5_TRADING_MODE` | `paper` (default) or `live` (not wired up) |
-| `C5_STARTING_CAPITAL` | Paper portfolio size (default 10000) |
-| `C5_POSITION_PCT` | Per-trade equity fraction (default 0.02 = 2%) |
-| `C5_STOP_LOSS_PCT` | Per-position hard stop (default 0.03 = 3%) |
-| `C5_DAILY_MAX_LOSS_PCT` | Daily loss that trips the kill switch (default 0.05 = 5%) |
-
-`yfinance` needs no API key — it is the default price source.
+| `C5_TRADING_MODE` | `paper` (default). `live` is intentionally not wired up. |
+| `C5_API_HOST` / `C5_API_PORT` | Backend bind address (default `0.0.0.0:8000`) |
+| `C5_API_CORS_ORIGINS` | Comma-separated origins allowed for the React dev server |
+| `C5_STARTING_CAPITAL`, `C5_POSITION_PCT`, `C5_STOP_LOSS_PCT`, `C5_DAILY_MAX_LOSS_PCT` | Risk params for backtests / paper sim |
 
 `.env` is git-ignored. Never commit it.
 
-## Running in paper mode
+## Running the dashboard
 
 ```bash
-# 1) pull market data into the SQLite DB
-python run_paper.py ingest AAPL MSFT TSLA
+# 1) backfill some historical bars + news/earnings for your watchlist
+python run_paper.py ingest AAPL MSFT TSLA NVDA AMD SPY QQQ
 
-# 2) score signals (volume spikes, earnings surprises, sentiment shifts)
-python run_paper.py signals AAPL MSFT TSLA
+# 2) start the API backend (also opens the Alpaca websocket if keys are set)
+uvicorn api.app:create_app --factory --reload --port 8000
 
-# 3) backtest the signal + risk engine on the ingested history
-python run_paper.py backtest AAPL
+# 3) start the React frontend (separate terminal)
+cd frontend && npm run dev   # http://localhost:5173
 ```
 
-The runner refuses to start when `C5_TRADING_MODE=live`. There is no
-live order-routing code in this repo. To go live later you must (a) be
-satisfied with backtest results, (b) add a broker adapter, and (c) flip
-the mode explicitly.
+The frontend proxies `/api/*` to `http://localhost:8000`, including the
+`/api/ws` websocket. Once Alpaca trades start flowing, the dashboard
+updates in real time — no fixed polling timer for prices.
+
+### Without Alpaca keys
+
+The backend still runs; `/candidates`, `/movers`, `/news`, `/stocks/...`
+work against whatever is in SQLite. The "LIVE" pill in the header turns
+off and the websocket sends a hello but no trade events. Real-time
+requires Alpaca keys.
+
+## Endpoints
+
+| Path | Description |
+|---|---|
+| `GET  /healthz` | server + stream status |
+| `GET  /disclaimer` | banner text (rendered in UI) |
+| `GET  /candidates?top_n=&min_confidence=` | ranked swing candidates + reasons |
+| `GET  /movers?lookback=` | top gainers / losers / high-volume movers |
+| `GET  /news?symbol=&limit=` | latest news headlines |
+| `GET  /search?q=` | ticker search |
+| `GET  /stocks/{symbol}` | intraday + daily bars + news + signal + audit log |
+| `GET  /audit-log?symbol=&limit=` | per-signal history with inputs |
+| `WS   /ws` | live trade events fan-out |
+
+## CLI (paper-only)
+
+```bash
+python run_paper.py ingest AAPL MSFT      # pull + store
+python run_paper.py signals AAPL MSFT     # score + audit log
+python run_paper.py backtest AAPL         # win rate, max DD, Sharpe…
+```
 
 ## Tests
 
@@ -68,15 +120,15 @@ the mode explicitly.
 python -m pytest tests/ -q
 ```
 
-36 tests covering DB writes, parsers, signal math, risk gating, and the
-backtester. All run offline — no network calls.
+61 backend tests covering DB, parsers, signals, risk gating, backtester,
+the Alpaca stream message handler, movers, and every FastAPI endpoint.
+All run offline — no network calls.
 
 ## Safety defaults
 
-- **Paper mode** unless explicitly set otherwise.
-- **Hard stop** on every position (`C5_STOP_LOSS_PCT`).
-- **Daily loss cap** auto-trips the kill switch (`C5_DAILY_MAX_LOSS_PCT`).
-- **Kill switch** can be tripped manually via `RiskManager.trip_kill_switch()`.
-- **No position stacking** — the manager rejects entries when a position
-  is already open in the same symbol.
-- **Min-confidence floor** (default 0.5) rejects weak or flat signals.
+- **Paper mode** unless explicitly overridden in `.env`; backend refuses
+  to start in `live` mode.
+- **No order routing** exists in this codebase.
+- **Hard stop** per position, **daily loss cap** auto-trips the kill
+  switch, **no position stacking**, **min-confidence floor**.
+- **Audit log**: every signal persisted with full inputs.
