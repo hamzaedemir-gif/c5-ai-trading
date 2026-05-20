@@ -50,6 +50,11 @@ class Config:
     api_cors_origins: str = _env("C5_API_CORS_ORIGINS",
                                  "http://localhost:5173,http://127.0.0.1:5173")
 
+    demo_mode: bool = _env("C5_DEMO_MODE", "0").lower() in ("1", "true", "yes")
+
+    def demo(self) -> bool:
+        return self.demo_mode
+
     def symbol_list(self) -> list[str]:
         return [s.strip().upper() for s in self.alpaca_symbols.split(",") if s.strip()]
 

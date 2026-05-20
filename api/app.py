@@ -17,6 +17,7 @@ from core import BackgroundScheduler
 from data import Ingestor
 from data.alpaca_stream import AlpacaStream
 from data.db import Database
+from demo import DEMO_SYMBOLS, SimulatedTicker, seed_database
 
 from .paper_portfolio import PaperPortfolioService
 from .routes import router
@@ -29,11 +30,13 @@ log = logging.getLogger(__name__)
 def create_app(*, db: Database | None = None,
                stream: AlpacaStream | None = None,
                symbols: list[str] | None = None,
-               enable_stream: bool = True) -> FastAPI:
+               enable_stream: bool = True,
+               demo_mode: bool | None = None) -> FastAPI:
     """Build a FastAPI app.
 
     `db`, `stream`, `symbols` may be injected for tests.
     `enable_stream=False` skips connecting to Alpaca even if keys are set.
+    `demo_mode=True` seeds sample data and uses a simulated price ticker.
     """
     cfg = load_config()
     if cfg.trading_mode.lower() == "live":
@@ -42,12 +45,19 @@ def create_app(*, db: Database | None = None,
             "Unset C5_TRADING_MODE or set it to 'paper'."
         )
 
+    is_demo = cfg.demo() if demo_mode is None else demo_mode
+
     if db is None:
         db = Database(cfg.db_path)
     if symbols is None:
-        symbols = cfg.symbol_list()
+        symbols = DEMO_SYMBOLS if is_demo else cfg.symbol_list()
 
-    if stream is None and enable_stream and cfg.alpaca_api_key and cfg.alpaca_api_secret:
+    if is_demo:
+        log.info("Demo mode: seeding sample data (no API keys needed)")
+        seed_database(db, symbols)
+        stream = SimulatedTicker(symbols, db=db)
+    elif (stream is None and enable_stream and cfg.alpaca_api_key
+          and cfg.alpaca_api_secret):
         stream = AlpacaStream(
             api_key=cfg.alpaca_api_key,
             api_secret=cfg.alpaca_api_secret,
@@ -64,7 +74,7 @@ def create_app(*, db: Database | None = None,
         daily_max_loss_pct=cfg.daily_max_loss_pct,
     )
     state = AppState(db=db, symbols=symbols, stream=stream, paper_mode=True,
-                     paper=paper)
+                     demo_mode=is_demo, paper=paper)
     ws_manager = WebSocketManager()
 
     scheduler = BackgroundScheduler()
@@ -155,6 +165,9 @@ def main() -> None:
     import uvicorn
 
     cfg = load_config()
+    mode = "DEMO" if cfg.demo() else "PAPER"
+    print(f"\nC5 AI Trading dashboard backend ({mode}) -> "
+          f"http://{cfg.api_host}:{cfg.api_port}\n")
     uvicorn.run("api.app:create_app", host=cfg.api_host, port=cfg.api_port,
                 factory=True, reload=False)
 

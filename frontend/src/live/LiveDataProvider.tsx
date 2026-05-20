@@ -23,6 +23,7 @@ export interface LiveQuote {
 export interface LiveHello {
   type: "hello";
   paper_mode: boolean;
+  demo_mode?: boolean;
   symbols: string[];
   snapshot: Record<string, Omit<LiveTrade, "type">>;
 }
@@ -32,6 +33,7 @@ export type LiveMessage = LiveTrade | LiveQuote | LiveHello;
 interface LiveDataState {
   connected: boolean;
   paperMode: boolean;
+  demoMode: boolean;
   symbols: string[];
   // Latest trade per symbol.
   latest: Record<string, Omit<LiveTrade, "type">>;
@@ -42,6 +44,7 @@ interface LiveDataState {
 const Ctx = createContext<LiveDataState>({
   connected: false,
   paperMode: true,
+  demoMode: false,
   symbols: [],
   latest: {},
   tick: 0,
@@ -54,6 +57,7 @@ export function useLiveData() {
 export function LiveDataProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [paperMode, setPaperMode] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
   const [symbols, setSymbols] = useState<string[]>([]);
   const [latest, setLatest] = useState<Record<string, Omit<LiveTrade, "type">>>({});
   const [tick, setTick] = useState(0);
@@ -85,6 +89,7 @@ export function LiveDataProvider({ children }: { children: React.ReactNode }) {
           const msg = JSON.parse(e.data) as LiveMessage;
           if (msg.type === "hello") {
             setPaperMode(msg.paper_mode);
+            setDemoMode(!!msg.demo_mode);
             setSymbols(msg.symbols);
             setLatest(msg.snapshot || {});
             setTick((t) => t + 1);
@@ -107,7 +112,7 @@ export function LiveDataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ connected, paperMode, symbols, latest, tick }}>
+    <Ctx.Provider value={{ connected, paperMode, demoMode, symbols, latest, tick }}>
       {children}
     </Ctx.Provider>
   );

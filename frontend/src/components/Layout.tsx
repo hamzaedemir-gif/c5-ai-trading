@@ -42,6 +42,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
               label={live.paperMode ? "PAPER MODE" : "LIVE MODE"}
               tone={live.paperMode ? "warn" : "bad"}
             />
+            {live.demoMode && (
+              <Pill label="DEMO DATA" tone="warn" />
+            )}
             <div className="text-mute">
               {live.symbols.length} symbols
             </div>

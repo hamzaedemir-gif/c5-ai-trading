@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+c5_*.sqlite
+backend.log
+frontend.log

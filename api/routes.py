@@ -253,6 +253,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json({
             "type": "hello",
             "paper_mode": s.paper_mode,
+            "demo_mode": s.demo_mode,
             "symbols": s.symbols,
             "snapshot": snapshot,
         })
