@@ -7,11 +7,24 @@
 
 ---
 
+## 🚀 Quick start — Windows
+
+```powershell
+.\setup-keys.ps1     # one-time: paste your Alpaca + Finnhub keys (validated for you)
+.\dev.ps1            # launch with hot-reload, open the printed URL
+```
+
+Open **<http://localhost:5173>**. Header pill flips to **LIVE DATA**
+when the Alpaca websocket is connected. Skip `setup-keys.ps1` to run in
+**DEMO DATA** mode (no keys needed — the app still runs end-to-end on
+seeded sample data).
+
+---
+
 ## 🛠 Development (fast hot-reload) — start here
 
-This is what you want during day-to-day work. Backend auto-restarts on
-Python file saves; frontend reloads instantly on `.ts` / `.tsx` saves.
-No Docker rebuilds. No API keys. Defaults to demo mode with sample data.
+Day-to-day workflow. Backend auto-restarts on Python saves; frontend
+reloads instantly on `.ts` / `.tsx` saves. No Docker rebuilds.
 
 ### Prerequisites
 
@@ -47,10 +60,34 @@ sudo apt install python3 python3-venv python3-pip nodejs npm        # Debian/Ubu
 sudo dnf install python3 python3-pip nodejs npm                      # Fedora/RHEL
 ```
 
-### One command to launch dev mode
+### Step 1 — Add your API keys (foolproof, interactive)
 
-Pick the one for your OS — they all do the same thing and open at
-**<http://localhost:5173>**:
+Run the setup script for your OS. It prompts you for each key one at a
+time, writes them into `.env` atomically (no duplicate lines, no manual
+editing), and validates each one with one real HTTP call so you know
+immediately if a key is bad.
+
+| Your OS | Command |
+|---|---|
+| **Windows (PowerShell)** | `.\setup-keys.ps1` |
+| **macOS / Linux**        | `./setup-keys.sh`  |
+
+You'll be asked for three keys (free, ~2 min):
+
+- **Alpaca API Key** + **Secret** — real-time IEX prices. Get them at
+  <https://alpaca.markets> → Paper Trading → Generate API Keys.
+- **Finnhub API Key** — news + earnings (Finnhub is **not** used for
+  prices). Get one at <https://finnhub.io>.
+
+The script prints `Alpaca: OK` / `Finnhub: OK` per key, or the exact
+error text if validation fails. If a key is bad, fix it and re-run.
+
+**Skip this step entirely** to run with demo data — the app still
+boots, with the `DEMO DATA` pill in the header.
+
+### Step 2 — Launch with hot-reload
+
+Pick the one for your OS — they all open at **<http://localhost:5173>**:
 
 | Your OS | Command |
 |---|---|
@@ -66,8 +103,13 @@ Edit any `*.py` file under `api/`, `data/`, `signals/`, etc → backend
 restarts in ~1s. Edit any `*.tsx` / `*.ts` file under `frontend/src/` →
 the browser updates instantly (Vite HMR).
 
-> Windows note: if PowerShell refuses to run `.\dev.ps1` with an
-> "execution policy" error, run this once in the same window first:
+The launcher auto-detects whether you have Alpaca keys in `.env`:
+- keys present → **LIVE DATA** pill, Alpaca IEX websocket
+- keys absent → **DEMO DATA** pill, simulated ticker on sample data
+
+> Windows note: if PowerShell refuses to run `.\dev.ps1` or
+> `.\setup-keys.ps1` with an "execution policy" error, run this once in
+> the same window first:
 > `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
 
 ### What you'll see
@@ -103,14 +145,18 @@ up --build` again). Use the dev mode above for editing.
 
 ## Switching from demo mode to real data
 
-When you're ready to use real market data:
+Use `.\setup-keys.ps1` (Windows) or `./setup-keys.sh` (macOS/Linux) — it
+prompts for each key, writes them into `.env` atomically, and validates
+them with one real API call so you find out immediately if a key is bad.
 
-1. Get a free **Alpaca** key (real-time prices, IEX feed is free):
-   <https://alpaca.markets> → Paper Trading → Generate API Keys.
-2. Get a free **Finnhub** key (earnings + news):
-   <https://finnhub.io> → dashboard.
-3. `cp .env.example .env`, paste the keys, and set `C5_DEMO_MODE=0`.
-4. Re-run with docker (`docker compose up`) or the dev workflow below.
+Live vs demo is then **auto-detected** at backend startup:
+- `ALPACA_API_KEY` + `ALPACA_API_SECRET` present in `.env` → live Alpaca
+  IEX websocket, `LIVE DATA` pill in the header.
+- Either missing → falls back to demo mode automatically, `DEMO DATA`
+  pill in the header.
+
+Set `C5_DEMO_MODE=1` to force demo even with keys present (used by tests
+and for local UI tinkering).
 
 There is still **no live order routing**: paper-buy stays simulated.
 
@@ -118,8 +164,8 @@ There is still **no live order routing**: paper-buy stays simulated.
 
 | Variable | What it does |
 |---|---|
-| `C5_DEMO_MODE` | `1` = sample data + simulated ticker, no keys needed. `0` = real data (needs Alpaca + Finnhub). |
-| `ALPACA_API_KEY` / `ALPACA_API_SECRET` | Real-time price feed (free IEX feed). |
+| `ALPACA_API_KEY` / `ALPACA_API_SECRET` | Real-time price feed (free IEX feed). Presence of both triggers live mode. |
+| `C5_DEMO_MODE` | `1` = force demo even with keys present. Leave unset for auto-detect. |
 | `ALPACA_STREAM_URL` | Default: `wss://stream.data.alpaca.markets/v2/iex`. |
 | `ALPACA_SYMBOLS` | Comma-separated tickers to subscribe to. |
 | `FINNHUB_API_KEY` | Earnings + company news. |

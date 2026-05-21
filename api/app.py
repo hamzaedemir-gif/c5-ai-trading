@@ -34,9 +34,16 @@ def create_app(*, db: Database | None = None,
                demo_mode: bool | None = None) -> FastAPI:
     """Build a FastAPI app.
 
+    Live vs demo is chosen automatically:
+      - If ALPACA_API_KEY + ALPACA_API_SECRET are present in the env, the
+        Alpaca IEX websocket becomes the price source.
+      - Otherwise we fall back to demo mode with seeded sample data and a
+        SimulatedTicker so the app always runs.
+    Pass `demo_mode=True` to force demo even when keys are present (used
+    by tests and by C5_DEMO_MODE=1 for explicit local testing).
+
     `db`, `stream`, `symbols` may be injected for tests.
-    `enable_stream=False` skips connecting to Alpaca even if keys are set.
-    `demo_mode=True` seeds sample data and uses a simulated price ticker.
+    `enable_stream=False` skips constructing any stream.
     """
     cfg = load_config()
     if cfg.trading_mode.lower() == "live":
@@ -45,7 +52,9 @@ def create_app(*, db: Database | None = None,
             "Unset C5_TRADING_MODE or set it to 'paper'."
         )
 
-    is_demo = cfg.demo() if demo_mode is None else demo_mode
+    force_demo = cfg.force_demo if demo_mode is None else demo_mode
+    has_alpaca = cfg.has_alpaca_keys()
+    is_demo = force_demo or not has_alpaca
 
     if db is None:
         db = Database(cfg.db_path)
@@ -62,11 +71,15 @@ def create_app(*, db: Database | None = None,
         if already_seeded:
             log.info("Demo mode: existing sample data found, skipping seed")
         else:
-            log.info("Demo mode: seeding sample data (no API keys needed)")
+            why = "no Alpaca keys found" if not has_alpaca else "C5_DEMO_MODE=1"
+            log.info("Demo mode (%s): seeding sample data", why)
             seed_database(db, symbols)
-        stream = SimulatedTicker(symbols, db=db)
-    elif (stream is None and enable_stream and cfg.alpaca_api_key
-          and cfg.alpaca_api_secret):
+        if stream is None and enable_stream:
+            stream = SimulatedTicker(symbols, db=db)
+    elif stream is None and enable_stream:
+        # Live mode: Alpaca keys present and demo not forced.
+        log.info("Live mode: Alpaca keys detected, opening IEX websocket "
+                 "for %d symbols", len(symbols))
         stream = AlpacaStream(
             api_key=cfg.alpaca_api_key,
             api_secret=cfg.alpaca_api_secret,
@@ -174,8 +187,12 @@ def main() -> None:
     import uvicorn
 
     cfg = load_config()
-    mode = "DEMO" if cfg.demo() else "PAPER"
-    print(f"\nC5 AI Trading dashboard backend ({mode}) -> "
+    if cfg.effective_demo():
+        why = "no Alpaca keys" if not cfg.has_alpaca_keys() else "C5_DEMO_MODE=1"
+        mode = f"DEMO ({why})"
+    else:
+        mode = "LIVE (Alpaca IEX)"
+    print(f"\nC5 AI Trading dashboard backend [{mode}] -> "
           f"http://{cfg.api_host}:{cfg.api_port}\n")
     uvicorn.run("api.app:create_app", host=cfg.api_host, port=cfg.api_port,
                 factory=True, reload=False)

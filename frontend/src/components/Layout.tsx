@@ -35,16 +35,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-4 text-xs">
             <Pill
-              label={live.connected ? "LIVE" : "OFFLINE"}
+              label={live.connected ? "WS CONNECTED" : "WS OFFLINE"}
               tone={live.connected ? "ok" : "bad"}
+            />
+            <Pill
+              label={live.demoMode ? "DEMO DATA" : "LIVE DATA"}
+              tone={live.demoMode ? "warn" : "ok"}
             />
             <Pill
               label={live.paperMode ? "PAPER MODE" : "LIVE MODE"}
               tone={live.paperMode ? "warn" : "bad"}
             />
-            {live.demoMode && (
-              <Pill label="DEMO DATA" tone="warn" />
-            )}
             <div className="text-mute">
               {live.symbols.length} symbols
             </div>

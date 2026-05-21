@@ -38,15 +38,24 @@ if [ ! -d "frontend/node_modules" ]; then
 fi
 
 # --- env -------------------------------------------------------------------
-export C5_DEMO_MODE=1
-export C5_TRADING_MODE=paper
-export C5_DB_PATH="$SCRIPT_DIR/c5_demo.sqlite"
-rm -f "$C5_DB_PATH"
+# Default the trading mode and DB path; do NOT force C5_DEMO_MODE.
+# create_app() picks live vs demo automatically based on whether Alpaca
+# keys are in .env. Run ./setup-keys.sh once to add them.
+export C5_TRADING_MODE="${C5_TRADING_MODE:-paper}"
+export C5_DB_PATH="${C5_DB_PATH:-$SCRIPT_DIR/c5_local.sqlite}"
+
+# Detect mode from .env so we can print the right banner.
+data_mode="DEMO DATA (no Alpaca keys found in .env)"
+if [ -f ".env" ] && grep -E '^\s*ALPACA_API_KEY=.+' .env > /dev/null 2>&1 \
+   && grep -E '^\s*ALPACA_API_SECRET=.+' .env > /dev/null 2>&1; then
+    data_mode="LIVE DATA (Alpaca IEX websocket)"
+fi
 
 cat <<EOF
 
 ============================================================
-  C5 AI Trading - dev mode (hot-reload, demo data)
+  C5 AI Trading - dev mode (hot-reload)
+  Data source: $data_mode
 
   Open in your browser:
 
@@ -55,6 +64,7 @@ cat <<EOF
   Backend will auto-restart on Python file changes.
   Frontend HMR is instant on .ts / .tsx changes.
 
+  To switch from demo to live data, run:  ./setup-keys.sh
   Press Ctrl+C to stop.
 ============================================================
 

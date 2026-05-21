@@ -47,14 +47,25 @@ if (-not (Test-Path "frontend\node_modules")) {
 }
 
 # --- env -------------------------------------------------------------------
-$env:C5_DEMO_MODE     = "1"
-$env:C5_TRADING_MODE  = "paper"
-$env:C5_DB_PATH       = Join-Path $scriptDir "c5_demo.sqlite"
-Remove-Item -ErrorAction Ignore $env:C5_DB_PATH
+# Default the trading mode and DB path. DO NOT force C5_DEMO_MODE here:
+# create_app() picks live vs demo automatically based on whether Alpaca
+# keys are in .env. Run .\setup-keys.ps1 once to add them.
+if (-not $env:C5_TRADING_MODE) { $env:C5_TRADING_MODE = "paper" }
+if (-not $env:C5_DB_PATH)      { $env:C5_DB_PATH = Join-Path $scriptDir "c5_local.sqlite" }
+
+$dataMode = "DEMO DATA (no Alpaca keys found in .env)"
+if (Test-Path ".env") {
+    $envText = Get-Content ".env" -Raw
+    if ($envText -match "(?m)^\s*ALPACA_API_KEY=\S" -and `
+        $envText -match "(?m)^\s*ALPACA_API_SECRET=\S") {
+        $dataMode = "LIVE DATA (Alpaca IEX websocket)"
+    }
+}
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  C5 AI Trading - dev mode (hot-reload, demo data)"          -ForegroundColor Cyan
+Write-Host "  C5 AI Trading - dev mode (hot-reload)"                      -ForegroundColor Cyan
+Write-Host "  Data source: $dataMode"                                     -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Open in your browser:"                                      -ForegroundColor Cyan
 Write-Host ""
@@ -63,6 +74,7 @@ Write-Host ""
 Write-Host "  Backend auto-restarts on Python changes."                   -ForegroundColor Cyan
 Write-Host "  Frontend HMR is instant on .ts / .tsx changes."             -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  To switch from demo to live data, run:  .\setup-keys.ps1"   -ForegroundColor Cyan
 Write-Host "  Press Ctrl+C to stop."                                      -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
