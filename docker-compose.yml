@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: .
+    image: c5-trading-backend
+    environment:
+      C5_DEMO_MODE: "1"
+      C5_TRADING_MODE: paper
+      C5_API_CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080"
+      C5_DB_PATH: /data/c5_data.sqlite
+    volumes:
+      - c5data:/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  frontend:
+    build: ./frontend
+    image: c5-trading-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
+volumes:
+  c5data:
