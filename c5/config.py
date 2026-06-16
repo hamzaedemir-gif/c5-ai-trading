@@ -33,6 +33,9 @@ class Settings:
     starting_cash: float = field(default_factory=lambda: float(os.getenv("C5_STARTING_CASH", "1000")))
     default_symbol: str = field(default_factory=lambda: os.getenv("C5_DEFAULT_SYMBOL", "AAPL").upper())
     db_path: str = field(default_factory=lambda: os.getenv("C5_DB_PATH", "data/c5.db"))
+    default_watchlist: str = field(
+        default_factory=lambda: os.getenv("C5_WATCHLIST", "AAPL, NVDA, TSLA, SPY, AMD, META, MSFT")
+    )
 
     # Paper-trade test length, in seconds (10 minutes).
     trade_test_seconds: int = 600

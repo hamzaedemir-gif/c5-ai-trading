@@ -29,7 +29,12 @@ CREATE TABLE IF NOT EXISTS trades (
     band         TEXT,
     mode         TEXT,                    -- data mode at entry
     reason       TEXT,                    -- close reason / note
-    is_test      INTEGER DEFAULT 0        -- 1 = 10-minute paper-trade test
+    is_test      INTEGER DEFAULT 0,       -- 1 = 10-minute paper-trade test
+    setup        TEXT,                    -- setup kind at entry
+    feed_label   TEXT,                    -- e.g. FINNHUB LIVE / MOCK
+    is_auto      INTEGER DEFAULT 0,       -- 1 = opened by the auto-trader
+    reasons      TEXT,                    -- score reasons (joined)
+    warnings     TEXT                     -- score warnings (joined)
 );
 
 CREATE TABLE IF NOT EXISTS account_snapshots (
@@ -61,7 +66,22 @@ class Store:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that may be missing on databases created by older versions."""
+        existing = {r[1] for r in self._conn.execute("PRAGMA table_info(trades)")}
+        additions = {
+            "setup": "TEXT",
+            "feed_label": "TEXT",
+            "is_auto": "INTEGER DEFAULT 0",
+            "reasons": "TEXT",
+            "warnings": "TEXT",
+        }
+        for col, decl in additions.items():
+            if col not in existing:
+                self._conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {decl}")
 
     # -- trades ----------------------------------------------------------
     def insert_trade(self, trade: Dict[str, Any]) -> int:
@@ -69,6 +89,7 @@ class Store:
             "opened_ts", "closed_ts", "symbol", "side", "qty", "entry_price",
             "exit_price", "stop", "target", "status", "pnl", "pnl_pct",
             "confluence", "band", "mode", "reason", "is_test",
+            "setup", "feed_label", "is_auto", "reasons", "warnings",
         )
         values = [trade.get(c) for c in cols]
         placeholders = ", ".join("?" for _ in cols)
@@ -112,6 +133,20 @@ class Store:
             "SELECT COALESCE(SUM(pnl), 0) AS total FROM trades WHERE status = 'closed'"
         ).fetchone()
         return float(row["total"] or 0.0)
+
+    def win_loss_counts(self) -> Dict[str, int]:
+        row = self._conn.execute(
+            """SELECT
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) AS losses,
+                   SUM(CASE WHEN pnl = 0 THEN 1 ELSE 0 END) AS flats
+               FROM trades WHERE status = 'closed'"""
+        ).fetchone()
+        return {
+            "wins": int(row["wins"] or 0),
+            "losses": int(row["losses"] or 0),
+            "flats": int(row["flats"] or 0),
+        }
 
     # -- snapshots & health ---------------------------------------------
     def snapshot_account(self, cash: float, equity: float, realized: float, open_positions: int) -> None:

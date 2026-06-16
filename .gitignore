@@ -223,3 +223,6 @@ __marimo__/
 *.sqlite3
 data/*.db
 !data/.gitkeep
+
+# Streamlit local secrets (never commit real keys)
+.streamlit/secrets.toml

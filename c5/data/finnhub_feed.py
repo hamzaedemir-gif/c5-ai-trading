@@ -91,7 +91,18 @@ class FinnhubFeed(PriceFeed):
         except (TypeError, ValueError):
             self._last_trade_ts = None
         self._push_candle(price, prev_close)
-        q = Quote(symbol=self.symbol, price=round(price, 4), ts=time.time())
+        change = float(data.get("d") or (price - prev_close))
+        change_pct = float(data.get("dp") or (100.0 * change / prev_close if prev_close else 0.0))
+        q = Quote(
+            symbol=self.symbol,
+            price=round(price, 4),
+            ts=time.time(),
+            prev_close=round(prev_close, 4),
+            change=round(change, 4),
+            change_pct=round(change_pct, 3),
+            source="finnhub",
+            last_trade_ts=self._last_trade_ts,
+        )
         self._last_quote = q
         return q
 

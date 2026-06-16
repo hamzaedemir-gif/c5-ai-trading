@@ -24,6 +24,11 @@ class Quote:
     bid: Optional[float] = None
     ask: Optional[float] = None
     ts: float = field(default_factory=time.time)  # epoch seconds
+    prev_close: Optional[float] = None
+    change: Optional[float] = None
+    change_pct: Optional[float] = None
+    source: str = ""                 # e.g. "finnhub", "mock", "manual"
+    last_trade_ts: Optional[float] = None  # venue last-trade time, if known
 
     @property
     def spread(self) -> Optional[float]:

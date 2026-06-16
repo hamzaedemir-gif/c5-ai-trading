@@ -87,6 +87,9 @@ class MockFeed(PriceFeed):
     def get_quote(self) -> Quote:
         self._advance()
         price = self._candles[-1].close
+        prev_close = self._candles[-2].close if len(self._candles) > 1 else price
+        change = price - prev_close
+        change_pct = (100.0 * change / prev_close) if prev_close else 0.0
         # Tight, realistic synthetic spread.
         half = max(0.005, price * 0.0004) / 2.0
         q = Quote(
@@ -95,6 +98,10 @@ class MockFeed(PriceFeed):
             bid=round(price - half, 4),
             ask=round(price + half, 4),
             ts=time.time(),
+            prev_close=round(prev_close, 4),
+            change=round(change, 4),
+            change_pct=round(change_pct, 3),
+            source="mock",
         )
         self._last_quote = q
         return q
