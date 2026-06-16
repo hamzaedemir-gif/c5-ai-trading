@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# C5 local paper-trading database (do not commit)
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+!data/.gitkeep
