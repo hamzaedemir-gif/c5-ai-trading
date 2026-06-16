@@ -14,6 +14,7 @@ from typing import List, Optional
 import pandas as pd
 import requests
 
+from ..market_hours import is_regular_open
 from .base import (
     HEALTH_DISCONNECTED,
     HEALTH_LIVE,
@@ -28,6 +29,9 @@ _QUOTE_URL = "https://finnhub.io/api/v1/quote"
 _CANDLE_SECONDS = 60
 _HISTORY = 120
 _STALE_AFTER = 30
+# If the last-trade timestamp lags real time by more than this during the
+# regular session, the data is treated as delayed (labelled FINNHUB DELAYED).
+_DELAY_AFTER = 90
 
 
 class FinnhubFeed(PriceFeed):
@@ -41,6 +45,7 @@ class FinnhubFeed(PriceFeed):
         self._candles: List[Candle] = []
         self._last_quote: Optional[Quote] = None
         self._last_error: Optional[str] = None
+        self._last_trade_ts: Optional[float] = None  # Finnhub "t" field (epoch)
 
     def _fetch(self) -> Optional[dict]:
         try:
@@ -81,10 +86,29 @@ class FinnhubFeed(PriceFeed):
             return Quote(symbol=self.symbol, price=0.0, ts=time.time())
         price = float(data["c"])
         prev_close = float(data.get("pc", price) or price)
+        try:
+            self._last_trade_ts = float(data.get("t", 0)) or None
+        except (TypeError, ValueError):
+            self._last_trade_ts = None
         self._push_candle(price, prev_close)
         q = Quote(symbol=self.symbol, price=round(price, 4), ts=time.time())
         self._last_quote = q
         return q
+
+    def _trade_lag(self) -> Optional[float]:
+        """Seconds between now and Finnhub's last-trade timestamp."""
+        if self._last_trade_ts is None:
+            return None
+        return max(0.0, time.time() - self._last_trade_ts)
+
+    @property
+    def is_delayed(self) -> bool:
+        lag = self._trade_lag()
+        if lag is None:
+            return False
+        # Only meaningful during the regular session — outside it, trades are
+        # naturally old and the after-hours banner explains the staleness.
+        return is_regular_open() and lag > _DELAY_AFTER
 
     def get_candles(self, limit: int = 120) -> pd.DataFrame:
         df = self.candles_to_df(self._candles)
@@ -107,16 +131,28 @@ class FinnhubFeed(PriceFeed):
                 is_live=False,
             )
         age = self._last_quote.age_seconds()
+        delayed = self.is_delayed
+        lag = self._trade_lag()
         if age <= _STALE_AFTER:
+            if delayed:
+                return FeedHealth(
+                    status=HEALTH_LIVE,
+                    detail=f"Finnhub data delayed (last trade ~{int(lag or 0)}s ago).",
+                    last_quote_age=age,
+                    is_live=True,
+                    delayed=True,
+                )
             return FeedHealth(
                 status=HEALTH_LIVE,
                 detail="Finnhub live quote.",
                 last_quote_age=age,
                 is_live=True,
+                delayed=False,
             )
         return FeedHealth(
             status=HEALTH_STALE,
-            detail=f"Last quote {int(age)}s ago.",
+            detail=f"Last poll {int(age)}s ago.",
             last_quote_age=age,
             is_live=False,
+            delayed=delayed,
         )

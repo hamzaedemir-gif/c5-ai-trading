@@ -60,6 +60,7 @@ class FeedHealth:
     detail: str = ""
     last_quote_age: Optional[float] = None
     is_live: bool = False
+    delayed: bool = False  # data received but lagging real time (e.g. Finnhub delayed)
 
     @property
     def emoji(self) -> str:
