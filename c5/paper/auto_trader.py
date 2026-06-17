@@ -161,19 +161,17 @@ class AutoTrader:
             return price * (1 + config.min_gain_pct / 100.0)
         return opp.setup.target
 
+    # Minimum cash a trade must be able to deploy, else it's skipped (no dust).
+    MIN_TRADE_NOTIONAL = 25.0
+
     def _size(self, opp: Opportunity, equity: float, config: AutoConfig) -> float:
-        """Position size: risk-based, capped by max allocation and cash."""
+        """Allocation-based size: each trade deploys up to the max allocation,
+        capped by available cash. Skips trades too small to be meaningful."""
         price = opp.quote.price
         if price <= 0:
             return 0.0
-        risk_per_share = abs(opp.setup.entry - opp.setup.stop) if opp.setup.stop else 0.0
-        risk_dollars = max(0.0, equity * config.max_risk_pct / 100.0)
-
-        qty_alloc = config.max_alloc_per_trade / price
-        qty_risk = (risk_dollars / risk_per_share) if risk_per_share > 0 else qty_alloc
-        qty = min(qty_alloc, qty_risk)
-
-        # Never exceed available cash on a long.
-        if opp.setup.direction == "long":
-            qty = min(qty, self.account.cash / price)
-        return max(0.0, qty)
+        budget = min(config.max_alloc_per_trade, self.account.cash)
+        floor = min(config.max_alloc_per_trade, self.MIN_TRADE_NOTIONAL)
+        if budget < floor:
+            return 0.0  # not enough cash left for a meaningful trade
+        return budget / price
