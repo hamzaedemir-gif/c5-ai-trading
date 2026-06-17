@@ -134,6 +134,24 @@ class Store:
         ).fetchone()
         return float(row["total"] or 0.0)
 
+    def trade_summary(self) -> Dict[str, int]:
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS total,
+                      COALESCE(SUM(CASE WHEN status='open' THEN 1 ELSE 0 END), 0) AS open_n,
+                      COALESCE(SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END), 0) AS closed_n
+               FROM trades"""
+        ).fetchone()
+        return {"total": int(row["total"] or 0),
+                "open": int(row["open_n"] or 0),
+                "closed": int(row["closed_n"] or 0)}
+
+    def closed_trades(self, limit: int = 300) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM trades WHERE status='closed' ORDER BY closed_ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def win_loss_counts(self) -> Dict[str, int]:
         row = self._conn.execute(
             """SELECT

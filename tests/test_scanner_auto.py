@@ -123,6 +123,37 @@ def test_auto_trader_respects_max_simultaneous():
         store.close(); os.remove(path)
 
 
+# -- minimum gain target --------------------------------------------------
+def test_min_gain_sets_take_profit_target():
+    store, path = _store()
+    try:
+        acct = PaperAccount(store, 1000.0)
+        auto = AutoTrader(acct)
+        cfg = AutoConfig(enabled=True, min_gain_pct=2.0, max_alloc_per_trade=200.0)
+        auto.step([_qualifying_opp("AAA", 100.0)], cfg)  # entry @ 100
+        pos = list(acct.positions.values())[0]
+        # Target should be entry * (1 + 2%) = 102 for a long.
+        assert abs(pos.target - 102.0) < 1e-6
+    finally:
+        store.close(); os.remove(path)
+
+
+def test_trade_summary_counts():
+    store, path = _store()
+    try:
+        acct = PaperAccount(store, 1000.0)
+        auto = AutoTrader(acct)
+        auto.step([_qualifying_opp("AAA", 100.0)], AutoConfig(enabled=True, min_gain_pct=1.0))
+        assert store.trade_summary() == {"total": 1, "open": 1, "closed": 0}
+        # Hit the take-profit -> closes.
+        auto.step([_qualifying_opp("AAA", 105.0)], AutoConfig(enabled=False))
+        summ = store.trade_summary()
+        assert summ["total"] == 1 and summ["closed"] == 1 and summ["open"] == 0
+        assert len(store.closed_trades()) == 1
+    finally:
+        store.close(); os.remove(path)
+
+
 # -- auto exits -----------------------------------------------------------
 def test_exit_on_target_and_stop():
     store, path = _store()
