@@ -30,6 +30,10 @@ class AutoConfig:
     max_simultaneous: int = 5
     max_risk_pct: float = 1.0      # percent of paper equity risked per trade
     duration_seconds: int = 600    # 10-minute time exit
+    # Minimum gain target (% of entry). Sets the take-profit each paper trade
+    # aims for, so a winning close shows at least this gain. 0 = use the
+    # setup's own target.
+    min_gain_pct: float = 1.0
 
 
 @dataclass
@@ -119,6 +123,7 @@ class AutoTrader:
             if qty <= 0:
                 continue
 
+            target = self._target_for(opp, config)
             feed_label = opp.data_label
             using_real = opp.quote.source == "finnhub" and opp.health.is_live
             note_src = feed_label if using_real else f"{feed_label} (non-real data)"
@@ -128,7 +133,7 @@ class AutoTrader:
                 price=opp.quote.price,
                 qty=qty,
                 stop=opp.setup.stop,
-                target=opp.setup.target,
+                target=target,
                 confluence=opp.result.total,
                 band=opp.result.band,
                 mode=opp.quote.source or "mock",
@@ -146,6 +151,15 @@ class AutoTrader:
                     f"@ {opp.quote.price:.4f} (score {opp.result.total}, {note_src})"
                 )
         return actions
+
+    def _target_for(self, opp: Opportunity, config: AutoConfig) -> float:
+        """Take-profit target: driven by the Minimum gain % when set."""
+        if config.min_gain_pct and config.min_gain_pct > 0:
+            price = opp.quote.price
+            if opp.setup.direction == "short":
+                return price * (1 - config.min_gain_pct / 100.0)
+            return price * (1 + config.min_gain_pct / 100.0)
+        return opp.setup.target
 
     def _size(self, opp: Opportunity, equity: float, config: AutoConfig) -> float:
         """Position size: risk-based, capped by max allocation and cash."""
