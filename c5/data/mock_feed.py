@@ -33,9 +33,24 @@ class MockFeed(PriceFeed):
         self._rng = random.Random(seed if seed is not None else hash(self.symbol) & 0xFFFF)
         self._base_price = self._rng.uniform(20, 300)
         self._avg_volume = self._rng.uniform(80_000, 400_000)
+        # Momentum "run" state — creates realistic intraday trends/moves so
+        # genuine breakouts and VWAP reclaims form (not pure noise).
+        self._run_remaining = 0
+        self._run_bias = 0.0
         self._candles: List[Candle] = []
         self._last_quote: Quote | None = None
         self._build_history()
+
+    def _momentum(self) -> float:
+        """Return a directional bias for this bar, occasionally starting a run."""
+        if self._run_remaining > 0:
+            self._run_remaining -= 1
+            return self._run_bias
+        if self._rng.random() < 0.10:  # ~10% chance to start a trend leg
+            self._run_remaining = self._rng.randint(4, 10)
+            self._run_bias = self._rng.choice([-1, 1]) * self._rng.uniform(0.0010, 0.0028)
+            return self._run_bias
+        return 0.0
 
     # -- generation -------------------------------------------------------
     def _build_history(self) -> None:
@@ -47,7 +62,7 @@ class MockFeed(PriceFeed):
         for i in range(_HISTORY):
             ts = start + i * _CANDLE_SECONDS
             o = price
-            shock = self._rng.gauss(0, 0.0035) + drift
+            shock = self._rng.gauss(0, 0.0030) + drift + self._momentum()
             c = max(0.5, o * (1 + shock))
             hi = max(o, c) * (1 + abs(self._rng.gauss(0, 0.0015)))
             lo = min(o, c) * (1 - abs(self._rng.gauss(0, 0.0015)))
@@ -66,7 +81,7 @@ class MockFeed(PriceFeed):
         last = self._candles[-1]
         if now - last.ts >= _CANDLE_SECONDS:
             o = last.close
-            shock = self._rng.gauss(0, 0.0035)
+            shock = self._rng.gauss(0, 0.0030) + self._momentum()
             c = max(0.5, o * (1 + shock))
             hi = max(o, c) * (1 + abs(self._rng.gauss(0, 0.0015)))
             lo = min(o, c) * (1 - abs(self._rng.gauss(0, 0.0015)))

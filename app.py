@@ -17,6 +17,13 @@ import streamlit as st
 from c5.config import MODE_FINNHUB, MODE_MOCK, get_settings
 from c5.data.provider import MarketDataProvider
 from c5.db import Store
+from c5.demo import (
+    DEFAULT_COMPRESSION,
+    SESSION_OPEN,
+    demo_clock,
+    demo_session,
+    session_progress,
+)
 from c5.market_hours import market_session
 from c5.paper import AutoConfig, AutoTrader, PaperAccount
 from c5.scanner import parse_watchlist, scan
@@ -87,6 +94,8 @@ def init_state() -> None:
     st.session_state.setdefault("min_gain_pct", 1.0)
     st.session_state.setdefault("max_simul", 8)
     st.session_state.setdefault("auto_enabled", True)
+    st.session_state.setdefault("demo_start", time.time())
+    st.session_state.setdefault("compression", DEFAULT_COMPRESSION)
 
 
 # ----------------------------------------------------------------------
@@ -134,6 +143,18 @@ def render_sidebar() -> None:
             value=int(st.session_state.calls_per_min),
             help="Free tier ≈ 60. Raise this only if you have a paid Finnhub plan.")
         st.session_state.interval = st.slider("Refresh seconds", 2, 30, 6)
+        st.session_state.compression = st.slider(
+            "Demo-day speed (× real time)", 1.0, 30.0, float(st.session_state.compression),
+            help="How fast the simulated trading day advances (Simulated mode).")
+
+    if st.session_state.mode == MODE_MOCK:
+        st.sidebar.markdown("---")
+        if st.sidebar.button("🌅 Start new demo trading day"):
+            st.session_state.demo_start = time.time()
+            st.session_state.store.reset()
+            st.session_state.account = PaperAccount(st.session_state.store, s.starting_cash)
+            st.session_state.auto_trader = AutoTrader(st.session_state.account)
+            st.rerun()
 
     st.sidebar.markdown("---")
     st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
@@ -185,8 +206,9 @@ def render_scanner_status(universe_n, chunk_n, interval, scanned_syms, candidate
     c[1].metric("Per refresh", f"{chunk_n} scanned")
     c[2].metric("Full sweep ≈", sweep_txt)
     c[3].metric("Candidates now", f"{candidates}")
-    st.caption("Scanning rotates through the whole universe in rate-safe chunks; "
-               "open trades are re-checked every refresh for fast exits.")
+    st.caption("Auto-takes **only setups scoring 70+** on the Confluence model (not random); "
+               "rotates through the whole universe in rate-safe chunks and re-checks open "
+               "trades every refresh for fast exits.")
 
 
 def render_activity() -> None:
@@ -277,9 +299,22 @@ def live_panel() -> None:
     account.snapshot(price_map)
 
     real = mode_is_real and any(o.health.is_live for o in opps)
-    src = "🟢 Finnhub real prices" if real else ("🟠 Finnhub (no key → simulated)" if st.session_state.mode == MODE_FINNHUB else "🧪 Simulated prices")
-    st.caption(f"{src}  ·  US market: {market_session().upper()}  ·  "
-               f"auto-take: {'ON ⚡' if st.session_state.auto_enabled else 'OFF'}")
+    auto_txt = "ON ⚡" if st.session_state.auto_enabled else "OFF"
+    if st.session_state.mode == MODE_MOCK:
+        dt = demo_clock(st.session_state.demo_start, float(st.session_state.compression))
+        sess = demo_session(dt)
+        st.info(
+            f"**🌅 Simulated Trading Day (demo)** — {dt:%a %b %d}, **{dt:%H:%M} ET · {sess}**  ·  "
+            f"$1,000 paper account · auto-takes only setups scoring **70+** · auto-take {auto_txt}. "
+            f"_Synthetic prices for demonstration — not real market data._",
+            icon="🧪",
+        )
+        st.progress(session_progress(dt),
+                    text=f"Trading day 08:30 → 16:00 ET ({int(session_progress(dt)*100)}%)")
+    else:
+        src = "🟢 Finnhub real prices" if real else "🟠 Finnhub (no key → simulated)"
+        st.caption(f"{src}  ·  US market: {market_session().upper()}  ·  "
+                   f"takes only 70+ setups · auto-take: {auto_txt}")
 
     render_summary(account, store, price_map)
     st.markdown("---")
