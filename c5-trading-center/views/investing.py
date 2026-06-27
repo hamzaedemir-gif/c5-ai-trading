@@ -22,7 +22,10 @@ def render() -> None:
         st.button("Go to Sign in", on_click=lambda: state.go("signin"))
         return
 
-    st.header("Investing — Trading Screener")
+    top = st.columns([3, 1])
+    top[0].header("Investing — Trading Screener")
+    if top[1].button("📈 Open Charts", use_container_width=True):
+        state.go("charts")
 
     # --- Screener: available C5 versions ---
     with st.container(border=True):

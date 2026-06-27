@@ -22,6 +22,7 @@ from config import (
     session_is_open,
 )
 from stubs import broker, c5_engine, data_feed
+from tradingview import tv_chart
 
 
 # ----------------------------------------------------------------------
@@ -160,17 +161,6 @@ def _render_sections() -> None:
         st.caption("No open trades right now." if ss.running
                    else "Press START to begin taking trades.")
 
-    # --- Live charts ---
-    st.subheader("Live charts")
-    chart_tickers = [tr["ticker"] for tr in ss.open_trades] or data_feed.candidate_tickers()[:3]
-    series = {t: ss.price_history.get(t, []) for t in chart_tickers if ss.price_history.get(t)}
-    if series:
-        maxlen = max(len(v) for v in series.values())
-        data = {t: ([None] * (maxlen - len(v)) + v) for t, v in series.items()}
-        st.line_chart(pd.DataFrame(data))
-    else:
-        st.caption("Charts appear once the loop is running.")
-
     # --- Past trades (clickable detail) ---
     st.subheader("Past trades")
     if not ss.past_trades:
@@ -231,6 +221,26 @@ def render() -> None:
     st.caption(f"Status: {'🟢 RUNNING' if ss.running else '⏸ stopped'}  ·  "
                f"session window {'OPEN' if in_session else 'closed'}  ·  "
                "simulated data — no real orders.")
+    st.markdown("---")
+
+    # --- Live chart (TradingView, DISPLAY ONLY) -------------------------
+    # Shows the chart for the trade currently being taken. Rendered OUTSIDE the
+    # auto-refresh fragment so the iframe doesn't reload every tick; it points
+    # at the active trade's symbol and resyncs on refresh / the button below.
+    if ss.open_trades:
+        chart_symbol = ss.open_trades[0]["ticker"]
+    elif ss.past_trades:
+        chart_symbol = ss.past_trades[0]["ticker"]
+    else:
+        chart_symbol = data_feed.candidate_tickers()[0]
+
+    st.subheader("Live chart")
+    cc1, cc2 = st.columns([4, 1])
+    cc1.caption(f"TradingView chart for **{chart_symbol}** — display only. C5 analyzes "
+                "prices from the market-data provider (Webull/Finnhub), not TradingView.")
+    if cc2.button("🔄 Sync to current trade", use_container_width=True):
+        st.rerun()
+    tv_chart(chart_symbol, height=480)
     st.markdown("---")
 
     # Auto-refreshing loop fragment.

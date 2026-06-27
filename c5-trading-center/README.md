@@ -44,11 +44,13 @@ config.py               every tunable value (session window, money, confidence, 
 styles.py               black & blue CSS (P/L green/red only)
 state.py                session_state init + navigation helpers
 .streamlit/config.toml  dark black & blue theme
+tradingview.py          TradingView Advanced Chart embed (DISPLAY ONLY) + symbol map
 views/
   home.py               hero + "what C5 is" + Sign up / Sign in
   signin.py             mock email auth + mock TradingView/Webull connect
-  investing.py          screener + the 4 run settings
-  trading.py            START/STOP + simulated loop + all live sections
+  investing.py          screener + the 4 run settings + Open Charts link
+  trading.py            START/STOP + simulated loop + live TradingView chart
+  charts.py             pull up a TradingView chart for any US ticker
 stubs/
   auth.py               sign_in()                       # mock
   brokers.py            connect_tradingview/webull()    # mock
@@ -56,6 +58,25 @@ stubs/
   broker.py             place_order/close_order()       # mock
   c5_engine.py          get_confluence()                # mock (10–99)
 ```
+
+## Charts — TradingView is DISPLAY ONLY
+
+The app embeds TradingView's free **Advanced Chart** widget (`tradingview.py`,
+`tv_chart(symbol, height=520)`) purely as the **visual chart layer**:
+
+- The **Trading** page shows the TradingView chart for the trade currently being
+  taken (resyncs on refresh / the "Sync to current trade" button).
+- The **Charts** page lets you pull up any US ticker (search/select), mapping
+  plain tickers to TradingView's `EXCHANGE:SYMBOL` format where known.
+
+**TradingView is never a data source.** Every price C5 analyzes and trades on
+comes from the market-data provider (Webull OpenAPI primary, Finnhub backup) via
+`stubs/data_feed.py`. No analysis or trade data is read from TradingView.
+
+- [ ] **(Optional future)** Upgrade the embedded widget to the TradingView
+      **Charting Library** + a custom **Datafeed API** adapter wired to the same
+      Webull/Finnhub feed C5 analyzes, so the displayed candles match the
+      analyzed candles exactly. (See the TODO in `tradingview.py`.)
 
 ## Confidence wording
 
